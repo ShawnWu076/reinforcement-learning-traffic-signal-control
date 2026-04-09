@@ -6,7 +6,7 @@ This repository is a starter project for a group Reinforcement Learning course p
 
 We study a single-intersection control problem where an agent decides whether to keep or switch the signal phase at each time step. The goal is to reduce long-term congestion under stationary and nonstationary traffic regimes.
 
-Core research question:
+Core research questions:
 
 Can an RL controller learn a more robust long-horizon traffic signal policy than fixed-cycle and queue-based rule baselines, especially when traffic demand changes over time?
 
