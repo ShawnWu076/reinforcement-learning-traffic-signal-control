@@ -91,7 +91,8 @@ def main() -> None:
         while not done:
             epsilon = linear_epsilon(global_step, start_epsilon, end_epsilon, epsilon_decay_steps)
             action = agent.act(observation, epsilon=epsilon)
-            next_observation, reward, done, _ = train_env.step(action)
+            next_observation, reward, terminated, truncated, _ = train_env.step(action)
+            done = bool(terminated or truncated)
             agent.observe(observation, action, reward, next_observation, done)
 
             if global_step >= warmup_steps and global_step % update_frequency == 0:
@@ -112,11 +113,12 @@ def main() -> None:
         if (episode_idx + 1) % 25 == 0 or episode_idx == 0:
             print(
                 f"Episode {episode_idx + 1:4d}/{episodes} | "
-                f"reward={summary['total_reward']:.2f} | "
-                f"avg_queue={summary['average_queue_length']:.2f} | "
-                f"avg_wait_s={summary['average_wait_time_seconds']:.2f} | "
-                f"epsilon={summary['epsilon']:.3f}"
-            )
+            f"reward={summary['total_reward']:.2f} | "
+            f"avg_queue={summary['average_queue_length']:.2f} | "
+            f"avg_wait_s={summary['average_wait_time_seconds']:.2f} | "
+            f"invalid={summary['invalid_switch_count']:.0f} | "
+            f"epsilon={summary['epsilon']:.3f}"
+        )
 
     checkpoint_path = PROJECT_ROOT / args.checkpoint
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,7 +149,8 @@ def main() -> None:
             f"{regime_name:18s} | "
             f"avg_queue={dqn_summary['average_queue_length']:.2f} | "
             f"avg_wait_s={dqn_summary['average_wait_time_seconds']:.2f} | "
-            f"throughput={dqn_summary['throughput_per_step']:.2f}"
+            f"throughput={dqn_summary['throughput_per_step']:.2f} | "
+            f"invalid={dqn_summary['invalid_switch_count']:.2f}"
         )
 
     output_path = PROJECT_ROOT / args.summary_output

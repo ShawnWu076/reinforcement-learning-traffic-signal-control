@@ -16,14 +16,15 @@ def _render_baseline_summary(summary: dict[str, dict[str, dict[str, float]]]) ->
     lines = ["Baseline summary", ""]
     for regime_name, policy_results in summary.items():
         lines.append(f"Regime: {regime_name}")
-        lines.append("policy            avg_queue  avg_wait_s  throughput  switches")
+        lines.append("policy            avg_queue  avg_wait_s  throughput  switches  invalid")
         for policy_name, metrics in policy_results.items():
             lines.append(
                 f"{policy_name:16s}  "
                 f"{_format_float(metrics['average_queue_length']):>9s}  "
                 f"{_format_float(metrics['average_wait_time_seconds']):>10s}  "
                 f"{_format_float(metrics['throughput_per_step']):>10s}  "
-                f"{_format_float(metrics['switch_count']):>8s}"
+                f"{_format_float(metrics['switch_count']):>8s}  "
+                f"{_format_float(metrics.get('invalid_switch_count', 0.0)):>7s}"
             )
         lines.append("")
     return "\n".join(lines).rstrip()
@@ -50,7 +51,7 @@ def _render_dqn_summary(summary: dict[str, object]) -> str:
 
     if evaluation_results:
         lines.append("Evaluation")
-        lines.append("regime              avg_queue  avg_wait_s  throughput  switches")
+        lines.append("regime              avg_queue  avg_wait_s  throughput  switches  invalid")
         for regime_name, policy_results in evaluation_results.items():
             dqn_metrics = policy_results["dqn"]
             lines.append(
@@ -58,7 +59,8 @@ def _render_dqn_summary(summary: dict[str, object]) -> str:
                 f"{_format_float(dqn_metrics['average_queue_length']):>9s}  "
                 f"{_format_float(dqn_metrics['average_wait_time_seconds']):>10s}  "
                 f"{_format_float(dqn_metrics['throughput_per_step']):>10s}  "
-                f"{_format_float(dqn_metrics['switch_count']):>8s}"
+                f"{_format_float(dqn_metrics['switch_count']):>8s}  "
+                f"{_format_float(dqn_metrics.get('invalid_switch_count', 0.0)):>7s}"
             )
     return "\n".join(lines)
 

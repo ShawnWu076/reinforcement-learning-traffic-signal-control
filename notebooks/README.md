@@ -1,18 +1,14 @@
-# Notebook Plan
+# Notebook Status
 
-Suggested notebooks for the group:
+No project notebooks are committed yet.
+
+Recommended first notebooks after the runnable core is stable:
 
 1. `01_simulator_sanity_check.ipynb`
-   - visualize queue growth under simple regimes
-   - validate departures and switch penalties
-
+   Validate queue growth, departures, and switching behavior under simple schedules.
 2. `02_baseline_comparison.ipynb`
-   - compare fixed-cycle, queue-threshold, and max-pressure baselines
-   - summarize metrics across regimes
-
+   Load `results/baseline_summary.json` and compare the heuristic controllers across regimes.
 3. `03_dqn_training_analysis.ipynb`
-   - plot training reward curves
-   - inspect learned policy behavior
-   - compare DQN against baselines
+   Load `results/dqn_summary.json`, inspect training history, and compare DQN against baselines.
 
-Start with scripts first. Use notebooks mainly for analysis and presentation-ready plots.
+Use the scripts first. Treat notebooks as analysis and presentation layers on top of the JSON outputs.
