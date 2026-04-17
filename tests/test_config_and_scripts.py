@@ -19,8 +19,10 @@ SMOKE_CONFIG = """
 environment:
   episode_length: 12
   step_seconds: 3
+  min_green_time: 2
   yellow_time: 1
   max_departures_per_step: 3
+  recent_arrival_window: 5
   reward_mode: queue
   switch_penalty: 1.0
   train_schedule:

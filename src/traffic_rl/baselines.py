@@ -15,8 +15,9 @@ def _extract_state(observation: np.ndarray) -> dict[str, float]:
         "q_s": float(observation[1]),
         "q_e": float(observation[2]),
         "q_w": float(observation[3]),
-        "phase": int(observation[4]),
+        "phase": int(round(float(observation[4]))),
         "phase_duration": float(observation[5]),
+        "switch_allowed": float(observation[6]),
     }
 
 
@@ -29,6 +30,8 @@ class FixedCycleController:
 
     def act(self, observation: np.ndarray) -> int:
         state = _extract_state(observation)
+        if state["switch_allowed"] < 0.5:
+            return KEEP_ACTION
         if state["phase_duration"] >= self.cycle_length:
             return SWITCH_ACTION
         return KEEP_ACTION
@@ -47,6 +50,8 @@ class QueueThresholdController:
         ns_queue = state["q_n"] + state["q_s"]
         ew_queue = state["q_e"] + state["q_w"]
 
+        if state["switch_allowed"] < 0.5:
+            return KEEP_ACTION
         if state["phase_duration"] < self.min_green:
             return KEEP_ACTION
 
@@ -69,6 +74,8 @@ class MaxPressureController:
         ns_queue = state["q_n"] + state["q_s"]
         ew_queue = state["q_e"] + state["q_w"]
 
+        if state["switch_allowed"] < 0.5:
+            return KEEP_ACTION
         if state["phase_duration"] < self.min_green:
             return KEEP_ACTION
 

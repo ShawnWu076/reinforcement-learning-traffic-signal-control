@@ -24,11 +24,12 @@ def run_episode(
 ) -> dict[str, float]:
     """Run one episode and return summary metrics."""
     observation, _ = env.reset(seed=seed)
-    done = False
+    terminated = False
+    truncated = False
 
-    while not done:
+    while not (terminated or truncated):
         action = _resolve_action(policy, observation)
-        observation, _, done, _ = env.step(action)
+        observation, _, terminated, truncated, _ = env.step(action)
 
     return env.summarize()
 
