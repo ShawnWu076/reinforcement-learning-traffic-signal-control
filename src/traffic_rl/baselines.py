@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 import numpy as np
 
-from .env import KEEP_ACTION, SWITCH_ACTION
+from .env import KEEP_ACTION, SWITCH_ACTION, resolve_switch_allowed
 
 
-def _extract_state(observation: np.ndarray) -> dict[str, float]:
+def _extract_state(
+    observation: np.ndarray,
+    info: Mapping[str, Any] | None = None,
+) -> dict[str, float]:
     return {
         "q_n": float(observation[0]),
         "q_s": float(observation[1]),
@@ -17,7 +21,7 @@ def _extract_state(observation: np.ndarray) -> dict[str, float]:
         "q_w": float(observation[3]),
         "phase": int(round(float(observation[4]))),
         "phase_duration": float(observation[5]),
-        "switch_allowed": float(observation[6]),
+        "switch_allowed": float(resolve_switch_allowed(observation, info)),
     }
 
 
@@ -28,8 +32,8 @@ class FixedCycleController:
     cycle_length: int = 10
     name: str = "fixed_cycle"
 
-    def act(self, observation: np.ndarray) -> int:
-        state = _extract_state(observation)
+    def act(self, observation: np.ndarray, info: Mapping[str, Any] | None = None) -> int:
+        state = _extract_state(observation, info)
         if state["switch_allowed"] < 0.5:
             return KEEP_ACTION
         if state["phase_duration"] >= self.cycle_length:
@@ -45,8 +49,8 @@ class QueueThresholdController:
     min_green: int = 3
     name: str = "queue_threshold"
 
-    def act(self, observation: np.ndarray) -> int:
-        state = _extract_state(observation)
+    def act(self, observation: np.ndarray, info: Mapping[str, Any] | None = None) -> int:
+        state = _extract_state(observation, info)
         ns_queue = state["q_n"] + state["q_s"]
         ew_queue = state["q_e"] + state["q_w"]
 
@@ -69,8 +73,8 @@ class MaxPressureController:
     min_green: int = 2
     name: str = "max_pressure"
 
-    def act(self, observation: np.ndarray) -> int:
-        state = _extract_state(observation)
+    def act(self, observation: np.ndarray, info: Mapping[str, Any] | None = None) -> int:
+        state = _extract_state(observation, info)
         ns_queue = state["q_n"] + state["q_s"]
         ew_queue = state["q_e"] + state["q_w"]
 

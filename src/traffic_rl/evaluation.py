@@ -8,13 +8,23 @@ import numpy as np
 
 from .env import AdaptiveTrafficSignalEnv
 
-Policy = Callable[[np.ndarray], int]
+Policy = Callable[..., int]
 
 
-def _resolve_action(policy: Any, observation: np.ndarray) -> int:
+def _resolve_action(
+    policy: Any,
+    observation: np.ndarray,
+    info: Mapping[str, Any] | None = None,
+) -> int:
     if hasattr(policy, "act"):
-        return int(policy.act(observation))
-    return int(policy(observation))
+        try:
+            return int(policy.act(observation, info=info))
+        except TypeError:
+            return int(policy.act(observation))
+    try:
+        return int(policy(observation, info=info))
+    except TypeError:
+        return int(policy(observation))
 
 
 def run_episode(
@@ -23,13 +33,13 @@ def run_episode(
     seed: int | None = None,
 ) -> dict[str, float]:
     """Run one episode and return summary metrics."""
-    observation, _ = env.reset(seed=seed)
+    observation, info = env.reset(seed=seed)
     terminated = False
     truncated = False
 
     while not (terminated or truncated):
-        action = _resolve_action(policy, observation)
-        observation, _, terminated, truncated, _ = env.step(action)
+        action = _resolve_action(policy, observation, info)
+        observation, _, terminated, truncated, info = env.step(action)
 
     return env.summarize()
 

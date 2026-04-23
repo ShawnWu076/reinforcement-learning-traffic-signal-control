@@ -17,6 +17,38 @@ EW_DIRECTIONS = ("E", "W")
 KEEP_ACTION = 0
 SWITCH_ACTION = 1
 
+OBSERVATION_VARIANTS = {"full", "minimal"}
+
+
+def resolve_switch_allowed(
+    observation: np.ndarray,
+    info: Mapping[str, Any] | None = None,
+) -> bool:
+    """Resolve whether a switch is currently allowed from observation or info."""
+    if len(observation) >= 7:
+        return bool(round(float(observation[6])))
+    if info is not None:
+        if "next_switch_allowed" in info:
+            return bool(info["next_switch_allowed"])
+        if "switch_allowed" in info:
+            return bool(info["switch_allowed"])
+    return True
+
+
+def build_action_mask(
+    observation: np.ndarray,
+    info: Mapping[str, Any] | None = None,
+    action_dim: int = 2,
+) -> np.ndarray:
+    """Build a binary mask over valid actions for the current state."""
+    if action_dim != 2:
+        raise ValueError("build_action_mask currently supports only the 2-action controller")
+
+    mask = np.ones(action_dim, dtype=np.float32)
+    if not resolve_switch_allowed(observation, info):
+        mask[SWITCH_ACTION] = 0.0
+    return mask
+
 
 @dataclass(frozen=True)
 class ScheduleSegment:
@@ -87,6 +119,7 @@ class AdaptiveTrafficSignalEnv(gym.Env):
         recent_arrival_window: int = 5,
         reward_mode: str = "queue",
         switch_penalty: float = 2.0,
+        observation_variant: str = "full",
         seed: int | None = None,
         render_mode: str | None = None,
     ) -> None:
@@ -104,6 +137,10 @@ class AdaptiveTrafficSignalEnv(gym.Env):
             raise ValueError("max_departures_per_step must be > 0")
         if recent_arrival_window <= 0:
             raise ValueError("recent_arrival_window must be > 0")
+        if observation_variant not in OBSERVATION_VARIANTS:
+            raise ValueError(
+                f"observation_variant must be one of {sorted(OBSERVATION_VARIANTS)}"
+            )
         if render_mode not in {None, "human"}:
             raise ValueError("render_mode must be None or 'human'")
 
@@ -117,34 +154,14 @@ class AdaptiveTrafficSignalEnv(gym.Env):
         self.recent_arrival_window = int(recent_arrival_window)
         self.reward_mode = reward_mode
         self.switch_penalty = float(switch_penalty)
+        self.observation_variant = observation_variant
         self.render_mode = render_mode
         self.rng = np.random.default_rng(seed)
 
-        self.observation_dim = 13
+        self.observation_dim = 13 if self.observation_variant == "full" else 6
         self.action_dim = 2
         self.action_space = spaces.Discrete(self.action_dim)
-        self.observation_space = spaces.Box(
-            low=np.zeros(self.observation_dim, dtype=np.float32),
-            high=np.asarray(
-                [
-                    np.inf,
-                    np.inf,
-                    np.inf,
-                    np.inf,
-                    1.0,
-                    np.inf,
-                    1.0,
-                    float(self.yellow_time),
-                    1.0,
-                    np.inf,
-                    np.inf,
-                    np.inf,
-                    np.inf,
-                ],
-                dtype=np.float32,
-            ),
-            dtype=np.float32,
-        )
+        self.observation_space = self._build_observation_space()
 
         self.step_count = 0
         self.current_phase = 0
@@ -221,12 +238,15 @@ class AdaptiveTrafficSignalEnv(gym.Env):
                 self.queues[direction].extend([0] * count_int)
 
         observation = self._get_observation()
+        switch_allowed = self._is_switch_allowed()
         info = {
             "queue_length": self._total_queue_length(),
             "arrival_rates": self._current_arrival_rates(),
             "phase": self.current_phase,
-            "switch_allowed": self._is_switch_allowed(),
+            "switch_allowed": switch_allowed,
+            "next_switch_allowed": switch_allowed,
             "yellow_remaining": self.yellow_remaining,
+            "observation_variant": self.observation_variant,
         }
         return observation, info
 
@@ -296,6 +316,7 @@ class AdaptiveTrafficSignalEnv(gym.Env):
         truncated = self.step_count >= self.episode_length
 
         observation = self._get_observation()
+        next_switch_allowed = self._is_switch_allowed()
         info = {
             "step": self.step_count,
             "queue_length": queue_length,
@@ -305,12 +326,14 @@ class AdaptiveTrafficSignalEnv(gym.Env):
             "phase_duration": self.phase_duration,
             "switch_requested": bool(switch_requested),
             "switch_allowed": bool(switch_allowed),
+            "next_switch_allowed": bool(next_switch_allowed),
             "switch_applied": bool(switch_applied),
             "invalid_switch": bool(invalid_switch),
             "in_yellow": bool(in_yellow),
             "yellow_remaining": int(self.yellow_remaining),
             "pending_phase": self.pending_phase,
             "switch_cooldown": int(self.yellow_remaining),
+            "observation_variant": self.observation_variant,
         }
         return observation, reward, terminated, truncated, info
 
@@ -385,10 +408,6 @@ class AdaptiveTrafficSignalEnv(gym.Env):
         return np.mean(stacked, axis=0).astype(np.float32)
 
     def _get_observation(self) -> np.ndarray:
-        normalized_step = float(self.step_count) / float(self.episode_length)
-        normalized_step = float(min(max(normalized_step, 0.0), 1.0))
-        recent_arrivals = self._recent_arrival_means()
-
         values = [
             len(self.queues.get("N", [])),
             len(self.queues.get("S", [])),
@@ -396,12 +415,58 @@ class AdaptiveTrafficSignalEnv(gym.Env):
             len(self.queues.get("W", [])),
             self.current_phase,
             self.phase_duration,
-            float(self._is_switch_allowed()),
-            self.yellow_remaining,
-            normalized_step,
-            recent_arrivals[0],
-            recent_arrivals[1],
-            recent_arrivals[2],
-            recent_arrivals[3],
         ]
+        if self.observation_variant == "full":
+            normalized_step = float(self.step_count) / float(self.episode_length)
+            normalized_step = float(min(max(normalized_step, 0.0), 1.0))
+            recent_arrivals = self._recent_arrival_means()
+            values.extend(
+                [
+                    float(self._is_switch_allowed()),
+                    self.yellow_remaining,
+                    normalized_step,
+                    recent_arrivals[0],
+                    recent_arrivals[1],
+                    recent_arrivals[2],
+                    recent_arrivals[3],
+                ]
+            )
         return np.asarray(values, dtype=np.float32)
+
+    def _build_observation_space(self) -> spaces.Box:
+        if self.observation_variant == "minimal":
+            high = np.asarray(
+                [
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                    1.0,
+                    np.inf,
+                ],
+                dtype=np.float32,
+            )
+        else:
+            high = np.asarray(
+                [
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                    1.0,
+                    np.inf,
+                    1.0,
+                    float(self.yellow_time),
+                    1.0,
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                    np.inf,
+                ],
+                dtype=np.float32,
+            )
+        return spaces.Box(
+            low=np.zeros(self.observation_dim, dtype=np.float32),
+            high=high,
+            dtype=np.float32,
+        )

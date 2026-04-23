@@ -9,14 +9,15 @@ Implemented now:
 - Gymnasium-compatible single-intersection simulator with stochastic arrivals
 - minimum-green enforcement, true yellow transitions, and invalid-switch tracking
 - three heuristic baselines: fixed-cycle, queue-threshold, max-pressure
-- DQN training loop with replay buffer and target network
+- DQN training loop with replay buffer, target network, legal-action masking, and seeded runs
+- ablation runner for reward, state, switch-penalty, and generalization studies
+- automatic figure generation from aggregated experiment outputs
 - JSON result outputs for baselines and DQN training/evaluation
 - smoke tests for the environment and the main scripts
 
 Planned but not included yet:
 
 - finished analysis notebooks
-- presentation-ready plots and figures
 - checkpoint resume / experiment tracking
 - multi-intersection extensions
 
@@ -33,6 +34,7 @@ Can an RL policy learn a better long-horizon controller than fixed-cycle and que
 ```text
 RL_traffic_Alex/
 ├── configs/
+│   ├── ablations.yaml
 │   └── default.yaml
 ├── docs/
 │   └── proposal_draft.md
@@ -40,6 +42,8 @@ RL_traffic_Alex/
 │   └── README.md
 ├── results/
 ├── scripts/
+│   ├── plot_ablations.py
+│   ├── run_ablations.py
 │   ├── run_baselines.py
 │   ├── summarize_results.py
 │   └── train_dqn.py
@@ -80,6 +84,9 @@ The simulator includes:
 - minimum-green constraints
 - yellow-time switch loss with a pending next phase
 - explicit invalid switch request metrics
+- configurable `observation_variant` for ablations:
+  - `full`: current 13D observation
+  - `minimal`: 6D observation with queues, phase, and phase duration
 - queue-based or waiting-based reward shaping
 
 ## Setup
@@ -90,6 +97,12 @@ Core runtime:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+On this machine, the verified environment is:
+
+```bash
+conda activate clean311
 ```
 
 Optional extras for notebooks, plotting, or alternative YAML parsing:
@@ -105,21 +118,28 @@ pip install -r requirements-optional.txt
 Run the tests:
 
 ```bash
-python3 -m unittest discover -s tests
+conda run -n clean311 python -m unittest discover -s tests
 ```
 
 Run baseline evaluation:
 
 ```bash
-python3 scripts/run_baselines.py --config configs/default.yaml
-python3 scripts/summarize_results.py results/baseline_summary.json
+conda run -n clean311 python scripts/run_baselines.py --config configs/default.yaml
+conda run -n clean311 python scripts/summarize_results.py results/baseline_summary.json
 ```
 
 Train and evaluate DQN:
 
 ```bash
-python3 scripts/train_dqn.py --config configs/default.yaml
-python3 scripts/summarize_results.py results/dqn_summary.json
+conda run -n clean311 python scripts/train_dqn.py --config configs/default.yaml
+conda run -n clean311 python scripts/summarize_results.py results/dqn_summary.json
+```
+
+Run the ablation suite and generate figures:
+
+```bash
+conda run -n clean311 python scripts/run_ablations.py --config configs/ablations.yaml
+conda run -n clean311 python scripts/plot_ablations.py results/ablations/ablation_summary.json
 ```
 
 ## Outputs
@@ -129,6 +149,8 @@ Main generated artifacts:
 - `results/baseline_summary.json`
 - `results/dqn_summary.json`
 - `results/checkpoints/dqn_policy.pt`
+- `results/ablations/ablation_summary.json`
+- `results/figures/*.png`
 
 Reported metrics:
 
@@ -161,6 +183,6 @@ updating the code.
 ## Recommended Next Steps
 
 1. Run the baselines and DQN pipeline once end to end.
-2. Compare evaluation metrics across the configured regimes.
-3. Use `scripts/summarize_results.py` plus a notebook or report table for presentation.
-4. Add ablations for reward design, state representation, and switch penalty if time allows.
+2. Run `scripts/run_ablations.py` to generate seeded reward/state/switch-penalty/generalization studies.
+3. Use `scripts/plot_ablations.py` to generate presentation-ready comparison figures.
+4. Use notebooks only as a lightweight analysis layer on top of the saved JSON outputs.

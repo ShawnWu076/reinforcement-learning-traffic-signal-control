@@ -31,12 +31,24 @@ def _render_baseline_summary(summary: dict[str, dict[str, dict[str, float]]]) ->
 
 
 def _render_dqn_summary(summary: dict[str, object]) -> str:
+    metadata = summary.get("metadata", {})
     training_history = summary.get("training_history", [])
     evaluation_results = summary.get("evaluation_results", {})
     checkpoint = summary.get("checkpoint", "")
 
     lines = ["DQN summary", ""]
     lines.append(f"Checkpoint: {checkpoint}")
+    if metadata:
+        lines.append(
+            "Run metadata: "
+            f"study={metadata.get('study_name', 'default')}, "
+            f"variant={metadata.get('variant_name', 'default')}, "
+            f"seed={metadata.get('seed', 'n/a')}, "
+            f"train_schedule={metadata.get('train_schedule_name', 'train_schedule')}, "
+            f"obs={metadata.get('observation_variant', 'full')}, "
+            f"reward={metadata.get('reward_mode', 'queue')}, "
+            f"switch_penalty={_format_float(float(metadata.get('switch_penalty', 0.0)))}"
+        )
     lines.append(f"Training episodes recorded: {len(training_history)}")
     if training_history:
         final_episode = training_history[-1]
