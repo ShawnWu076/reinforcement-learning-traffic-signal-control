@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 try:
     import yaml
@@ -198,6 +199,56 @@ def load_config(path: str | Path) -> dict[str, Any]:
         with config_path.open("r", encoding="utf-8") as file:
             return yaml.safe_load(file)
     return _load_without_pyyaml(config_path)
+
+
+def _load_override_value(raw_value: str) -> Any:
+    if yaml is not None:
+        return yaml.safe_load(raw_value)
+    return _parse_scalar(raw_value)
+
+
+def parse_override_strings(overrides: Sequence[str] | None) -> dict[str, Any]:
+    """Parse repeated key=value CLI overrides."""
+    parsed: dict[str, Any] = {}
+    for item in overrides or []:
+        if "=" not in item:
+            raise ValueError(f"Override '{item}' must use the form section.key=value")
+
+        key, raw_value = item.split("=", maxsplit=1)
+        key = key.strip()
+        if not key:
+            raise ValueError("Override keys must not be empty")
+
+        parsed[key] = _load_override_value(raw_value)
+
+    return parsed
+
+
+def apply_overrides(
+    config: Mapping[str, Any],
+    overrides: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Return a deep-copied config with dotted-path overrides applied."""
+    merged = deepcopy(dict(config))
+
+    for dotted_path, value in (overrides or {}).items():
+        parts = [part for part in dotted_path.split(".") if part]
+        if not parts:
+            raise ValueError("Override paths must not be empty")
+
+        cursor = merged
+        for part in parts[:-1]:
+            current_value = cursor.get(part)
+            if current_value is None:
+                cursor[part] = {}
+                current_value = cursor[part]
+            if not isinstance(current_value, dict):
+                raise ValueError(f"Cannot set nested override beneath non-mapping key '{part}'")
+            cursor = current_value
+
+        cursor[parts[-1]] = value
+
+    return merged
 
 
 def build_env_kwargs(

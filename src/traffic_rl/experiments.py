@@ -96,6 +96,7 @@ def train_and_evaluate_dqn(
     start_epsilon = float(train_config.get("start_epsilon", 1.0))
     end_epsilon = float(train_config.get("end_epsilon", 0.05))
     epsilon_decay_steps = int(train_config.get("epsilon_decay_steps", 20_000))
+    log_interval = max(int(train_config.get("log_interval_episodes", 25)), 1)
     epsilon = end_epsilon
 
     if verbose:
@@ -137,7 +138,7 @@ def train_and_evaluate_dqn(
             summary["mean_loss"] = float(sum(losses) / len(losses))
         training_history.append(summary)
 
-        if verbose and ((episode_idx + 1) % 25 == 0 or episode_idx == 0):
+        if verbose and ((episode_idx + 1) % log_interval == 0 or episode_idx == 0):
             print(
                 f"Episode {episode_idx + 1:4d}/{episodes} | "
                 f"reward={summary['total_reward']:.2f} | "

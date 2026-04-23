@@ -91,6 +91,27 @@ training:
   update_frequency: 1
   target_sync_steps: 250
   seed: 7
+  log_interval_episodes: 25
 
 evaluation:
   episodes_per_regime: 20
+
+tuning:
+  search_type: grid
+  seed: 11
+  max_trials: 12
+  fixed_overrides:
+    training.episodes: 150
+    training.warmup_steps: 300
+  objective:
+    regime: nonstationary
+    policy: dqn
+    metric: average_wait_time_seconds
+    mode: min
+  search_space:
+    training.learning_rate: [0.001, 0.0005, 0.0002]
+    training.gamma: [0.97, 0.99]
+    training.batch_size: [64, 128]
+    training.hidden_dims:
+      - [128, 128]
+      - [256, 128]

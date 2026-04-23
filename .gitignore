@@ -8,3 +8,5 @@ venv/
 results/checkpoints/
 results/*.json
 results/*.pt
+results/plots/
+results/tuning/

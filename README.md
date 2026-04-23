@@ -11,8 +11,10 @@ Implemented now:
 - three heuristic baselines: fixed-cycle, queue-threshold, max-pressure
 - DQN training loop with replay buffer, target network, legal-action masking, and seeded runs
 - ablation runner for reward, state, switch-penalty, and generalization studies
-- automatic figure generation from aggregated experiment outputs
-- JSON result outputs for baselines and DQN training/evaluation
+- CLI config overrides for quick DQN experiments
+- lightweight hyperparameter search for the current `1x1` setup
+- automatic figure generation for both single DQN runs and tuning results
+- JSON result outputs for baselines, DQN training/evaluation, and tuning
 - smoke tests for the environment and the main scripts
 
 Planned but not included yet:
@@ -43,21 +45,27 @@ RL_traffic_Alex/
 ├── results/
 ├── scripts/
 │   ├── plot_ablations.py
+│   ├── plot_results.py
 │   ├── run_ablations.py
 │   ├── run_baselines.py
 │   ├── summarize_results.py
-│   └── train_dqn.py
+│   ├── train_dqn.py
+│   └── tune_dqn.py
 ├── src/
 │   └── traffic_rl/
-│       ├── __init__.py
-│       ├── baselines.py
 │       ├── config.py
 │       ├── dqn.py
 │       ├── env.py
-│       └── evaluation.py
+│       ├── evaluation.py
+│       ├── experiment.py
+│       ├── experiments.py
+│       ├── tuning.py
+│       └── visualization.py
 ├── tests/
 │   ├── test_config_and_scripts.py
-│   └── test_env.py
+│   ├── test_config_and_tuning.py
+│   ├── test_env.py
+│   └── test_experiment.py
 ├── requirements.txt
 └── requirements-optional.txt
 ```
@@ -99,48 +107,79 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-On this machine, the verified environment is:
-
-```bash
-conda activate clean311
-```
-
-Optional extras for notebooks, plotting, or alternative YAML parsing:
+Optional extras for YAML parsing, plotting, notebooks, and tests:
 
 ```bash
 pip install -r requirements-optional.txt
 ```
 
-`PyYAML` is optional now. The project can read the included config files without it.
+`PyYAML` and `matplotlib` are optional. The repo can train and evaluate with the core requirements, while plotting features and YAML writing are enabled automatically when the optional packages are installed.
 
 ## Verification
 
 Run the tests:
 
 ```bash
-conda run -n clean311 python -m unittest discover -s tests
+python3 -m unittest discover -s tests
 ```
 
 Run baseline evaluation:
 
 ```bash
-conda run -n clean311 python scripts/run_baselines.py --config configs/default.yaml
-conda run -n clean311 python scripts/summarize_results.py results/baseline_summary.json
+python3 scripts/run_baselines.py --config configs/default.yaml
+python3 scripts/summarize_results.py results/baseline_summary.json
 ```
 
 Train and evaluate DQN:
 
 ```bash
-conda run -n clean311 python scripts/train_dqn.py --config configs/default.yaml
-conda run -n clean311 python scripts/summarize_results.py results/dqn_summary.json
+python3 scripts/train_dqn.py --config configs/default.yaml
+python3 scripts/summarize_results.py results/dqn_summary.json
+```
+
+Try a quick manual parameter override without editing YAML:
+
+```bash
+python3 scripts/train_dqn.py \
+  --config configs/default.yaml \
+  --set training.learning_rate=0.0005 \
+  --set training.hidden_dims='[256, 128]'
+```
+
+Run the built-in hyperparameter search for the current `1x1` setting:
+
+```bash
+python3 scripts/tune_dqn.py --config configs/default.yaml
+```
+
+Regenerate plots from an existing summary JSON:
+
+```bash
+python3 scripts/plot_results.py \
+  --summary results/dqn_summary.json \
+  --output-dir results/plots/manual
 ```
 
 Run the ablation suite and generate figures:
 
 ```bash
-conda run -n clean311 python scripts/run_ablations.py --config configs/ablations.yaml
-conda run -n clean311 python scripts/plot_ablations.py results/ablations/ablation_summary.json
+python3 scripts/run_ablations.py --config configs/ablations.yaml
+python3 scripts/plot_ablations.py results/ablations/ablation_summary.json
 ```
+
+## Tuning Workflow
+
+- Keep the simulator at the current `1x1` scope and tune the DQN before expanding the environment.
+- Put search candidates under `tuning.search_space` in `configs/default.yaml`.
+- Use `tuning.fixed_overrides` to shorten each trial, then re-run the best config with full training episodes.
+- By default the tuning objective is `dqn` performance on the `nonstationary` regime using `average_wait_time_seconds`.
+
+Main tuning artifacts:
+
+- `results/tuning/tuning_summary.json`
+- `results/tuning/best_config.yaml`
+- `results/plots/tuning/tuning_overview.png`
+- `results/plots/tuning/best_trial/*.png`
 
 ## Outputs
 
@@ -150,6 +189,9 @@ Main generated artifacts:
 - `results/dqn_summary.json`
 - `results/checkpoints/dqn_policy.pt`
 - `results/ablations/ablation_summary.json`
+- `results/tuning/tuning_summary.json`
+- `results/plots/dqn/*.png`
+- `results/plots/tuning/*.png`
 - `results/figures/*.png`
 
 Reported metrics:
@@ -168,9 +210,7 @@ Reported metrics:
 
 ## Compatibility Note
 
-Older checkpoints from the previous 10D observation version are not compatible
-with this final 13D observation version. Re-run `scripts/train_dqn.py` after
-updating the code.
+Older checkpoints from the previous 10D observation version are not compatible with this final 13D observation version. Re-run `scripts/train_dqn.py` after updating the code.
 
 ## Known Limitations
 
@@ -184,5 +224,5 @@ updating the code.
 
 1. Run the baselines and DQN pipeline once end to end.
 2. Run `scripts/run_ablations.py` to generate seeded reward/state/switch-penalty/generalization studies.
-3. Use `scripts/plot_ablations.py` to generate presentation-ready comparison figures.
-4. Use notebooks only as a lightweight analysis layer on top of the saved JSON outputs.
+3. Run `scripts/tune_dqn.py` to narrow the DQN hyperparameters for the current `1x1` setup.
+4. Use the saved JSON outputs and generated figures directly in the report or slides.
