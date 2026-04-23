@@ -15,7 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from traffic_rl.baselines import FixedCycleController, MaxPressureController
 from traffic_rl.dqn import DQNAgent, DQNConfig
-from traffic_rl.env import AdaptiveTrafficSignalEnv, KEEP_ACTION, SWITCH_ACTION
+from traffic_rl.env import AdaptiveTrafficSignalEnv, KEEP_ACTION, SWITCH_ACTION, build_action_mask
 
 
 ZERO_SCHEDULE = [
@@ -49,6 +49,19 @@ class AdaptiveTrafficSignalEnvTest(unittest.TestCase):
         self.assertEqual(info["queue_length"], 0)
         self.assertEqual(info["phase"], 0)
         self.assertFalse(info["switch_allowed"])
+
+    def test_minimal_observation_variant_has_expected_shape(self) -> None:
+        env = AdaptiveTrafficSignalEnv(
+            arrival_schedule=ZERO_SCHEDULE,
+            episode_length=5,
+            observation_variant="minimal",
+        )
+        observation, info = env.reset(seed=0)
+
+        self.assertEqual(observation.shape, (6,))
+        self.assertEqual(env.observation_dim, 6)
+        self.assertTrue(env.observation_space.contains(observation))
+        self.assertEqual(info["next_switch_allowed"], info["switch_allowed"])
 
     def test_episode_finishes_after_expected_steps(self) -> None:
         env = AdaptiveTrafficSignalEnv(
@@ -199,6 +212,66 @@ class AdaptiveTrafficSignalEnvTest(unittest.TestCase):
 
         self.assertEqual(fixed_cycle.act(observation), KEEP_ACTION)
         self.assertEqual(max_pressure.act(observation), KEEP_ACTION)
+
+    def test_baselines_accept_minimal_observation_with_info(self) -> None:
+        fixed_cycle = FixedCycleController(cycle_length=1)
+        max_pressure = MaxPressureController(min_green=0)
+        observation = np.asarray([1, 1, 5, 5, 0, 4], dtype=np.float32)
+
+        self.assertEqual(
+            fixed_cycle.act(observation, info={"next_switch_allowed": 0}),
+            KEEP_ACTION,
+        )
+        self.assertEqual(
+            max_pressure.act(observation, info={"next_switch_allowed": 0}),
+            KEEP_ACTION,
+        )
+        self.assertEqual(
+            max_pressure.act(observation, info={"next_switch_allowed": 1}),
+            SWITCH_ACTION,
+        )
+
+    def test_action_mask_blocks_switch_in_full_observation(self) -> None:
+        observation = np.asarray(
+            [1, 1, 5, 5, 0, 4, 0, 0, 0.5, 0, 0, 0, 0],
+            dtype=np.float32,
+        )
+
+        np.testing.assert_array_equal(
+            build_action_mask(observation),
+            np.asarray([1.0, 0.0], dtype=np.float32),
+        )
+
+    def test_action_mask_uses_info_for_minimal_observation(self) -> None:
+        observation = np.asarray([1, 1, 5, 5, 0, 4], dtype=np.float32)
+
+        np.testing.assert_array_equal(
+            build_action_mask(observation, info={"next_switch_allowed": 0}),
+            np.asarray([1.0, 0.0], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(
+            build_action_mask(observation, info={"next_switch_allowed": 1}),
+            np.asarray([1.0, 1.0], dtype=np.float32),
+        )
+
+    def test_dqn_action_mask_blocks_invalid_greedy_and_random_actions(self) -> None:
+        agent = DQNAgent(
+            observation_dim=6,
+            action_dim=2,
+            config=DQNConfig(batch_size=2, buffer_size=16, hidden_dims=(8,), target_sync_steps=2),
+        )
+        with torch.no_grad():
+            for parameter in agent.q_network.parameters():
+                parameter.zero_()
+            final_linear = agent.q_network.network[-1]
+            final_linear.bias.copy_(torch.tensor([0.0, 10.0]))
+
+        state = np.zeros(6, dtype=np.float32)
+        mask = np.asarray([1.0, 0.0], dtype=np.float32)
+
+        self.assertEqual(agent.act(state, epsilon=0.0, action_mask=mask), KEEP_ACTION)
+        for _ in range(5):
+            self.assertEqual(agent.act(state, epsilon=1.0, action_mask=mask), KEEP_ACTION)
 
     def test_dqn_checkpoint_round_trip(self) -> None:
         env = AdaptiveTrafficSignalEnv(arrival_schedule=ZERO_SCHEDULE, episode_length=6, seed=0)

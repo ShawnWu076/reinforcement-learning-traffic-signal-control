@@ -215,4 +215,5 @@ def build_env_kwargs(
         "recent_arrival_window": int(environment_config.get("recent_arrival_window", 5)),
         "reward_mode": environment_config.get("reward_mode", "queue"),
         "switch_penalty": float(environment_config.get("switch_penalty", 2.0)),
+        "observation_variant": environment_config.get("observation_variant", "full"),
     }

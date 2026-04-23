@@ -94,13 +94,41 @@ class DQNAgent:
         self.replay_buffer = ReplayBuffer(config.buffer_size)
         self.training_steps = 0
 
-    def act(self, state: np.ndarray, epsilon: float = 0.0) -> int:
+    def act(
+        self,
+        state: np.ndarray,
+        epsilon: float = 0.0,
+        action_mask: np.ndarray | None = None,
+    ) -> int:
+        valid_actions: np.ndarray | None = None
+        if action_mask is not None:
+            action_mask = np.asarray(action_mask, dtype=np.float32)
+            if action_mask.shape != (self.action_dim,):
+                raise ValueError(
+                    f"action_mask must have shape {(self.action_dim,)}, got {action_mask.shape}"
+                )
+            valid_actions = np.flatnonzero(action_mask > 0.0)
+            if len(valid_actions) == 0:
+                raise ValueError("action_mask does not permit any valid actions")
+
         if random.random() < epsilon:
-            return random.randrange(self.action_dim)
+            if valid_actions is None:
+                return random.randrange(self.action_dim)
+            return int(random.choice(valid_actions.tolist()))
 
         state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         with torch.no_grad():
             q_values = self.q_network(state_tensor)
+            if action_mask is not None:
+                invalid_actions = torch.as_tensor(
+                    action_mask <= 0.0,
+                    dtype=torch.bool,
+                    device=self.device,
+                ).unsqueeze(0)
+                q_values = q_values.masked_fill(
+                    invalid_actions,
+                    torch.finfo(q_values.dtype).min,
+                )
         return int(torch.argmax(q_values, dim=1).item())
 
     def observe(
