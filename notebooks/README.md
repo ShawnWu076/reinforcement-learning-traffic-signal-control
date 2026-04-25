@@ -1,14 +1,19 @@
 # Notebook Status
 
-No project notebooks are committed yet.
+These notebooks are analysis and presentation layers on top of the JSON files written by the scripts.
 
-Recommended first notebooks after the runnable core is stable:
+Current notebooks:
 
-1. `01_simulator_sanity_check.ipynb`
-   Validate queue growth, departures, and switching behavior under simple schedules.
-2. `02_baseline_comparison.ipynb`
-   Load `results/baseline_summary.json` and compare the heuristic controllers across regimes.
-3. `03_dqn_training_analysis.ipynb`
-   Load `results/dqn_summary.json`, inspect training history, and compare DQN against baselines.
+- `01_project_overview.ipynb`: project-level dashboard for goals, implemented pieces, current results, and next steps.
+- `02_baseline_comparison.ipynb`: loads `results/baseline_summary.json` and compares the heuristic controllers across regimes.
+- `03_dqn_training_analysis.ipynb`: loads `results/dqn_summary.json`, inspects DQN training behavior, and compares DQN against baselines.
 
-Use the scripts first. Treat notebooks as analysis and presentation layers on top of the JSON outputs.
+Recommended workflow:
+
+```bash
+python3 scripts/run_baselines.py --config configs/default.yaml
+python3 scripts/train_dqn.py --config configs/default.yaml
+python3 scripts/tune_dqn.py --config configs/default.yaml
+```
+
+Then open the notebooks to inspect, explain, and export the results for a report or presentation.
