@@ -21,6 +21,29 @@ from traffic_rl.experiment import run_dqn_experiment, save_experiment_summary
 from traffic_rl.tuning import build_trial_overrides, extract_objective_score, sort_trials
 from traffic_rl.visualization import generate_experiment_plots, plot_tuning_results
 
+DEFAULT_CONFIG = "configs/default.yaml"
+DEFAULT_OUTPUT = "results/tuning/tuning_summary.json"
+DEFAULT_TRIALS_DIR = "results/tuning/trials"
+DEFAULT_CHECKPOINTS_DIR = "results/tuning/checkpoints"
+DEFAULT_PLOT_DIR = "results/plots/tuning"
+
+PROFILE_DEFAULTS = {
+    "1x1": {
+        "config": "configs/default.yaml",
+        "output": "results/tuning/1x1/tuning_summary.json",
+        "trials_dir": "results/tuning/1x1/trials",
+        "checkpoints_dir": "results/tuning/1x1/checkpoints",
+        "plot_dir": "results/plots/tuning/1x1",
+    },
+    "2x2": {
+        "config": "configs/grid_2x2.yaml",
+        "output": "results/tuning/2x2/tuning_summary.json",
+        "trials_dir": "results/tuning/2x2/trials",
+        "checkpoints_dir": "results/tuning/2x2/checkpoints",
+        "plot_dir": "results/plots/tuning/2x2",
+    },
+}
+
 
 def _dump_config(path: Path, config: dict[str, object]) -> None:
     if yaml is not None:
@@ -32,33 +55,39 @@ def _dump_config(path: Path, config: dict[str, object]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILE_DEFAULTS),
+        default=None,
+        help="Use standard paths for a 1x1 or 2x2 tuning run.",
+    )
+    parser.add_argument(
         "--config",
         type=str,
-        default="configs/default.yaml",
+        default=DEFAULT_CONFIG,
         help="Path to YAML config with a tuning section.",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="results/tuning/tuning_summary.json",
+        default=DEFAULT_OUTPUT,
         help="Path to write the tuning summary JSON.",
     )
     parser.add_argument(
         "--trials-dir",
         type=str,
-        default="results/tuning/trials",
+        default=DEFAULT_TRIALS_DIR,
         help="Directory where per-trial summaries are stored.",
     )
     parser.add_argument(
         "--checkpoints-dir",
         type=str,
-        default="results/tuning/checkpoints",
+        default=DEFAULT_CHECKPOINTS_DIR,
         help="Directory where per-trial checkpoints are stored.",
     )
     parser.add_argument(
         "--plot-dir",
         type=str,
-        default="results/plots/tuning",
+        default=DEFAULT_PLOT_DIR,
         help="Directory for tuning plots and best-trial plots.",
     )
     parser.add_argument(
@@ -70,7 +99,34 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    base_config = load_config(PROJECT_ROOT / args.config)
+    profile_defaults = PROFILE_DEFAULTS.get(args.profile, {})
+    config_path_arg = (
+        profile_defaults.get("config", args.config)
+        if args.config == DEFAULT_CONFIG
+        else args.config
+    )
+    output_arg = (
+        profile_defaults.get("output", args.output)
+        if args.output == DEFAULT_OUTPUT
+        else args.output
+    )
+    trials_dir_arg = (
+        profile_defaults.get("trials_dir", args.trials_dir)
+        if args.trials_dir == DEFAULT_TRIALS_DIR
+        else args.trials_dir
+    )
+    checkpoints_dir_arg = (
+        profile_defaults.get("checkpoints_dir", args.checkpoints_dir)
+        if args.checkpoints_dir == DEFAULT_CHECKPOINTS_DIR
+        else args.checkpoints_dir
+    )
+    plot_dir_arg = (
+        profile_defaults.get("plot_dir", args.plot_dir)
+        if args.plot_dir == DEFAULT_PLOT_DIR
+        else args.plot_dir
+    )
+
+    base_config = load_config(PROJECT_ROOT / config_path_arg)
     base_config = apply_overrides(base_config, parse_override_strings(args.overrides))
 
     tuning_config = base_config.get("tuning")
@@ -83,9 +139,9 @@ def main() -> None:
     objective.setdefault("policy", "dqn")
     objective.setdefault("mode", "min")
 
-    trials_dir = PROJECT_ROOT / args.trials_dir
-    checkpoints_dir = PROJECT_ROOT / args.checkpoints_dir
-    plot_dir = PROJECT_ROOT / args.plot_dir
+    trials_dir = PROJECT_ROOT / trials_dir_arg
+    checkpoints_dir = PROJECT_ROOT / checkpoints_dir_arg
+    plot_dir = PROJECT_ROOT / plot_dir_arg
     trials_dir.mkdir(parents=True, exist_ok=True)
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
@@ -152,7 +208,7 @@ def main() -> None:
         "best_config_path": str(best_config_path),
     }
 
-    output_path = PROJECT_ROOT / args.output
+    output_path = PROJECT_ROOT / output_arg
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as file:
         json.dump(tuning_summary, file, indent=2)

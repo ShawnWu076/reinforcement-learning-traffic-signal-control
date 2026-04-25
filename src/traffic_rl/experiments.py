@@ -8,13 +8,10 @@ import random
 from typing import Any, Mapping
 
 import numpy as np
-import torch
 
-from .baselines import FixedCycleController, MaxPressureController, QueueThresholdController
-from .config import build_env_kwargs
-from .dqn import DQNAgent, DQNConfig
-from .env import AdaptiveTrafficSignalEnv, build_action_mask
+from .env import build_action_mask
 from .evaluation import evaluate_policies
+from .factory import make_baseline_policies, make_environment, resolve_network_type
 
 
 def linear_epsilon(global_step: int, start: float, end: float, decay_steps: int) -> float:
@@ -27,6 +24,8 @@ def linear_epsilon(global_step: int, start: float, end: float, decay_steps: int)
 
 def set_global_seeds(seed: int) -> None:
     """Seed Python, NumPy, and PyTorch for reproducible experiments."""
+    import torch
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -37,7 +36,7 @@ def set_global_seeds(seed: int) -> None:
         torch.backends.cudnn.deterministic = True
 
 
-def make_masked_dqn_policy(agent: DQNAgent):
+def make_masked_dqn_policy(agent: Any):
     """Wrap the agent with environment-aware action masking for evaluation."""
 
     def policy(observation: np.ndarray, info: Mapping[str, Any] | None = None) -> int:
@@ -62,6 +61,8 @@ def train_and_evaluate_dqn(
     verbose: bool = True,
 ) -> dict[str, Any]:
     """Train one DQN run, evaluate it against baselines, and persist outputs."""
+    from .dqn import DQNAgent, DQNConfig
+
     env_config = dict(config["environment"])
     train_config = dict(config["training"])
     eval_config = dict(config["evaluation"])
@@ -69,8 +70,9 @@ def train_and_evaluate_dqn(
 
     set_global_seeds(base_seed)
 
-    train_env = AdaptiveTrafficSignalEnv(
-        **build_env_kwargs(env_config, env_config["train_schedule"]),
+    train_env = make_environment(
+        env_config,
+        env_config["train_schedule"],
         seed=base_seed,
     )
 
@@ -152,20 +154,15 @@ def train_and_evaluate_dqn(
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     agent.save(str(checkpoint_path))
 
-    policies = {
-        "fixed_cycle": FixedCycleController(cycle_length=10),
-        "queue_threshold": QueueThresholdController(threshold=5.0, min_green=3),
-        "max_pressure": MaxPressureController(min_green=2),
-        "dqn": make_masked_dqn_policy(agent),
-    }
+    policies = make_baseline_policies(train_env)
+    policies["dqn"] = make_masked_dqn_policy(agent)
 
     evaluation_results: dict[str, dict[str, dict[str, float]]] = {}
     if verbose:
         print("\nEvaluating trained DQN...\n")
 
     for regime_name, schedule in env_config["evaluation_regimes"].items():
-        env_kwargs = build_env_kwargs(env_config, schedule)
-        env_factory = lambda env_kwargs=env_kwargs: AdaptiveTrafficSignalEnv(**env_kwargs)
+        env_factory = lambda schedule=schedule: make_environment(env_config, schedule)
         regime_results = evaluate_policies(
             env_factory=env_factory,
             policies=policies,
@@ -187,6 +184,9 @@ def train_and_evaluate_dqn(
     metadata = {
         "study_name": "default",
         "variant_name": "default",
+        "network_type": resolve_network_type(env_config),
+        "grid_shape": env_config.get("grid_shape"),
+        "intersection_ids": env_config.get("intersection_ids"),
         "seed": base_seed,
         "reward_mode": env_config.get("reward_mode", "queue"),
         "switch_penalty": float(env_config.get("switch_penalty", 2.0)),

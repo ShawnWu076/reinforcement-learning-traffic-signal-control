@@ -1,4 +1,5 @@
 environment:
+  network_type: 1x1
   train_schedule_name: stationary_balanced
   episode_length: 200
   step_seconds: 3

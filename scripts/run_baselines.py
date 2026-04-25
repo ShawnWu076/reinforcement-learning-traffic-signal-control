@@ -11,10 +11,9 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from traffic_rl.baselines import FixedCycleController, MaxPressureController, QueueThresholdController
-from traffic_rl.config import build_env_kwargs, load_config
-from traffic_rl.env import AdaptiveTrafficSignalEnv
+from traffic_rl.config import load_config
 from traffic_rl.evaluation import evaluate_policies
+from traffic_rl.factory import make_baseline_policies, make_environment
 
 
 def format_metric(value: float) -> str:
@@ -41,18 +40,14 @@ def main() -> None:
     env_config = config["environment"]
     eval_config = config["evaluation"]
 
-    policies = {
-        "fixed_cycle": FixedCycleController(cycle_length=10),
-        "queue_threshold": QueueThresholdController(threshold=5.0, min_green=3),
-        "max_pressure": MaxPressureController(min_green=2),
-    }
+    sample_env = make_environment(env_config, env_config["train_schedule"])
+    policies = make_baseline_policies(sample_env)
 
     all_results: dict[str, dict[str, dict[str, float]]] = {}
 
     print("Evaluating baselines...\n")
     for regime_name, schedule in env_config["evaluation_regimes"].items():
-        env_kwargs = build_env_kwargs(env_config, schedule)
-        env_factory = lambda env_kwargs=env_kwargs: AdaptiveTrafficSignalEnv(**env_kwargs)
+        env_factory = lambda schedule=schedule: make_environment(env_config, schedule)
         results = evaluate_policies(
             env_factory=env_factory,
             policies=policies,

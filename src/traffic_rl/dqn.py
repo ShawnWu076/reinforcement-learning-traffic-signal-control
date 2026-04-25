@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import os
 import random
 from typing import Iterable
 
 import numpy as np
+
+os.environ.setdefault("KMP_INIT_AT_FORK", "FALSE")
+
 import torch
 from torch import nn
 from torch.nn import functional as F
