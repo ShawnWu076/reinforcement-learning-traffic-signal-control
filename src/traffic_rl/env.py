@@ -41,6 +41,14 @@ def build_action_mask(
     action_dim: int = 2,
 ) -> np.ndarray:
     """Build a binary mask over valid actions for the current state."""
+    if info is not None and "action_mask" in info:
+        mask = np.asarray(info["action_mask"], dtype=np.float32)
+        if mask.shape != (action_dim,):
+            raise ValueError(f"action_mask must have shape {(action_dim,)}, got {mask.shape}")
+        if not np.any(mask > 0.0):
+            raise ValueError("action_mask does not permit any valid actions")
+        return mask
+
     if action_dim != 2:
         raise ValueError("build_action_mask currently supports only the 2-action controller")
 

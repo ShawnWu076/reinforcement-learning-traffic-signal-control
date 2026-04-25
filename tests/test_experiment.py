@@ -20,6 +20,18 @@ SMALL_SCHEDULE = [
     }
 ]
 
+GRID_SMALL_SCHEDULE = [
+    {
+        "until_step": 6,
+        "rates": {
+            "A": {"N": 0.4, "W": 0.4},
+            "B": {"N": 0.4, "E": 0.4},
+            "C": {"S": 0.4, "W": 0.4},
+            "D": {"S": 0.4, "E": 0.4},
+        },
+    }
+]
+
 
 class ExperimentRunnerTest(unittest.TestCase):
     def test_run_dqn_experiment_returns_expected_summary(self) -> None:
@@ -75,6 +87,63 @@ class ExperimentRunnerTest(unittest.TestCase):
         self.assertEqual(len(summary["training_history"]), 3)
         self.assertIn("training_overview", summary)
         self.assertIn("tiny_eval", summary["evaluation_results"])
+
+    def test_run_dqn_experiment_supports_2x2_grid(self) -> None:
+        config = {
+            "environment": {
+                "network_type": "2x2",
+                "grid_shape": [2, 2],
+                "intersection_ids": ["A", "B", "C", "D"],
+                "train_schedule_name": "tiny_grid_train",
+                "episode_length": 6,
+                "step_seconds": 3,
+                "min_green_time": 1,
+                "yellow_time": 1,
+                "max_departures_per_step": 2,
+                "recent_arrival_window": 3,
+                "observation_variant": "full",
+                "reward_mode": "queue",
+                "switch_penalty": 1.0,
+                "train_schedule": GRID_SMALL_SCHEDULE,
+                "evaluation_regimes": {
+                    "tiny_grid_eval": GRID_SMALL_SCHEDULE,
+                },
+            },
+            "training": {
+                "episodes": 2,
+                "gamma": 0.95,
+                "learning_rate": 0.001,
+                "batch_size": 2,
+                "buffer_size": 64,
+                "hidden_dims": [16],
+                "start_epsilon": 0.8,
+                "end_epsilon": 0.1,
+                "epsilon_decay_steps": 12,
+                "warmup_steps": 1,
+                "update_frequency": 1,
+                "target_sync_steps": 4,
+                "seed": 5,
+                "device": "cpu",
+                "log_interval_episodes": 10,
+            },
+            "evaluation": {
+                "episodes_per_regime": 1,
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            checkpoint_path = Path(temp_dir) / "tiny_grid_checkpoint.pt"
+            summary = run_dqn_experiment(
+                config=config,
+                checkpoint_path=checkpoint_path,
+                verbose=False,
+            )
+
+            self.assertTrue(checkpoint_path.exists())
+
+        self.assertEqual(summary["metadata"]["network_type"], "2x2")
+        self.assertEqual(len(summary["training_history"]), 2)
+        self.assertIn("dqn", summary["evaluation_results"]["tiny_grid_eval"])
 
 
 if __name__ == "__main__":
