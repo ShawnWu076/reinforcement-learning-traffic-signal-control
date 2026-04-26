@@ -202,6 +202,58 @@ class ConfigAndScriptSmokeTest(unittest.TestCase):
         self.assertIn("DQN summary", render_result.stdout)
         self.assertIn("train_schedule=stationary_smoke", render_result.stdout)
 
+    def test_run_training_script_multiseed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            config_path = tmpdir_path / "config.yaml"
+            multiseed_summary_path = tmpdir_path / "dqn_multiseed_summary.json"
+            multiseed_output_dir = tmpdir_path / "multiseed"
+            config_path.write_text(SMOKE_CONFIG, encoding="utf-8")
+
+            train_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(PROJECT_ROOT / "scripts" / "train_dqn.py"),
+                    "--config",
+                    str(config_path),
+                    "--seeds",
+                    "3,5",
+                    "--multiseed-summary-output",
+                    str(multiseed_summary_path),
+                    "--multiseed-output-dir",
+                    str(multiseed_output_dir),
+                    "--no-plots",
+                ],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            render_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(PROJECT_ROOT / "scripts" / "summarize_results.py"),
+                    str(multiseed_summary_path),
+                ],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            payload = json.loads(multiseed_summary_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["seeds"], [3, 5])
+        self.assertEqual(payload["metadata"]["run_count"], 2)
+        self.assertTrue(payload["metadata"]["double_dqn"])
+        self.assertEqual(len(payload["runs"]), 2)
+        self.assertIn("aggregate", payload)
+        self.assertIn("switch_frequency_per_step", payload["runs"][0]["final_training_episode"])
+        self.assertIn("symmetric", payload["aggregate"]["per_regime"])
+        self.assertIn("Saved multi-seed summary", train_result.stdout)
+        self.assertIn("Multi-seed DQN summary", render_result.stdout)
+
     def test_train_and_evaluate_dqn_is_reproducible_for_same_seed(self) -> None:
         config = build_smoke_config_dict()
 
