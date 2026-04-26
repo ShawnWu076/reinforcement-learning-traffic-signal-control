@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import random
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
@@ -76,6 +78,12 @@ def train_and_evaluate_dqn(
         seed=base_seed,
     )
 
+    gradient_clip_raw = train_config.get("gradient_clip_norm")
+    gradient_clip_norm = (
+        None if gradient_clip_raw is None else float(gradient_clip_raw)
+    )
+    double_dqn = bool(train_config.get("double_dqn", True))
+
     agent = DQNAgent(
         observation_dim=train_env.observation_dim,
         action_dim=train_env.action_dim,
@@ -87,6 +95,8 @@ def train_and_evaluate_dqn(
             hidden_dims=tuple(train_config.get("hidden_dims", [128, 128])),
             target_sync_steps=int(train_config.get("target_sync_steps", 250)),
             device=str(train_config.get("device", "cpu")),
+            double_dqn=double_dqn,
+            gradient_clip_norm=gradient_clip_norm,
         ),
     )
 
@@ -102,7 +112,8 @@ def train_and_evaluate_dqn(
     epsilon = end_epsilon
 
     if verbose:
-        print("Training DQN...\n")
+        algorithm_name = "Double DQN" if double_dqn else "DQN"
+        print(f"Training {algorithm_name}...\n")
 
     for episode_idx in range(episodes):
         observation, info = train_env.reset(seed=base_seed + episode_idx)
@@ -122,7 +133,19 @@ def train_and_evaluate_dqn(
             )
             next_observation, reward, terminated, truncated, next_info = train_env.step(action)
             done = bool(terminated or truncated)
-            agent.observe(observation, action, reward, next_observation, done)
+            next_action_mask = build_action_mask(
+                next_observation,
+                info=next_info,
+                action_dim=agent.action_dim,
+            )
+            agent.observe(
+                observation,
+                action,
+                reward,
+                next_observation,
+                done,
+                next_action_mask=next_action_mask,
+            )
 
             if global_step >= warmup_steps and global_step % update_frequency == 0:
                 loss = agent.update()
@@ -195,6 +218,8 @@ def train_and_evaluate_dqn(
         "evaluation_episodes_per_regime": int(eval_config.get("episodes_per_regime", 10)),
         "train_schedule_name": str(env_config.get("train_schedule_name", "train_schedule")),
         "evaluation_regimes": list(env_config["evaluation_regimes"].keys()),
+        "double_dqn": double_dqn,
+        "gradient_clip_norm": gradient_clip_norm,
     }
     if run_metadata:
         metadata.update(run_metadata)
@@ -217,6 +242,100 @@ def train_and_evaluate_dqn(
             print(f"Saved training summary to {summary_path}")
 
     return payload
+
+
+def train_and_evaluate_dqn_multiseed(
+    config: Mapping[str, Any],
+    seeds: Sequence[int],
+    output_dir: str | Path,
+    summary_path: str | Path,
+    verbose: bool = True,
+) -> dict[str, Any]:
+    """Train and evaluate DQN over multiple seeds, then aggregate results."""
+    seed_values = [int(seed) for seed in seeds]
+    if not seed_values:
+        raise ValueError("seeds must contain at least one value")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    env_config = dict(config["environment"])
+    train_config = dict(config["training"])
+    episode_length = int(env_config.get("episode_length", 200))
+
+    if verbose:
+        print(f"Running multi-seed DQN experiment for seeds={seed_values}\n")
+
+    run_payloads: list[dict[str, Any]] = []
+    run_records: list[dict[str, Any]] = []
+    for seed in seed_values:
+        run_config = deepcopy(dict(config))
+        run_config.setdefault("training", {})
+        run_config["training"]["seed"] = seed
+
+        run_dir = output_dir / f"seed_{seed}"
+        checkpoint_path = run_dir / "dqn_policy.pt"
+        per_seed_summary_path = run_dir / "dqn_summary.json"
+
+        if verbose:
+            print(f"Seed {seed}:")
+
+        payload = train_and_evaluate_dqn(
+            config=run_config,
+            checkpoint_path=checkpoint_path,
+            summary_path=per_seed_summary_path,
+            run_metadata={
+                "seed": seed,
+                "multiseed": True,
+            },
+            verbose=verbose,
+        )
+        enriched_payload = _with_frequency_metrics(payload, episode_length)
+        run_payloads.append(enriched_payload)
+        run_records.append(
+            {
+                "seed": seed,
+                "summary_path": str(per_seed_summary_path),
+                "checkpoint": str(checkpoint_path),
+                "metadata": enriched_payload["metadata"],
+                "final_training_episode": enriched_payload["training_history"][-1],
+                "evaluation_results": enriched_payload["evaluation_results"],
+            }
+        )
+
+    metadata = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "run_count": len(seed_values),
+        "network_type": resolve_network_type(env_config),
+        "grid_shape": env_config.get("grid_shape"),
+        "intersection_ids": env_config.get("intersection_ids"),
+        "train_schedule_name": str(env_config.get("train_schedule_name", "train_schedule")),
+        "evaluation_regimes": list(env_config["evaluation_regimes"].keys()),
+        "reward_mode": env_config.get("reward_mode", "queue"),
+        "switch_penalty": float(env_config.get("switch_penalty", 2.0)),
+        "observation_variant": env_config.get("observation_variant", "full"),
+        "episodes": int(train_config.get("episodes", 250)),
+        "evaluation_episodes_per_regime": int(
+            dict(config["evaluation"]).get("episodes_per_regime", 10)
+        ),
+        "double_dqn": bool(train_config.get("double_dqn", True)),
+        "gradient_clip_norm": train_config.get("gradient_clip_norm"),
+    }
+    summary = {
+        "metadata": metadata,
+        "config": deepcopy(dict(config)),
+        "seeds": seed_values,
+        "runs": run_records,
+        "aggregate": aggregate_run_payloads(run_payloads),
+    }
+
+    summary_path = Path(summary_path)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    if verbose:
+        print(f"\nSaved multi-seed summary to {summary_path}")
+
+    return summary
 
 
 def aggregate_run_payloads(run_payloads: list[Mapping[str, Any]]) -> dict[str, Any]:
@@ -255,6 +374,41 @@ def aggregate_run_payloads(run_payloads: list[Mapping[str, Any]]) -> dict[str, A
         "per_regime": aggregated_regimes,
         "final_training_episode": aggregated_training,
     }
+
+
+def _with_frequency_metrics(payload: Mapping[str, Any], episode_length: int) -> dict[str, Any]:
+    enriched = deepcopy(dict(payload))
+    if enriched.get("training_history"):
+        enriched["training_history"][-1] = _add_frequency_metrics(
+            enriched["training_history"][-1],
+            episode_length=episode_length,
+        )
+    for policy_results in enriched.get("evaluation_results", {}).values():
+        for policy_name, metrics in list(policy_results.items()):
+            policy_results[policy_name] = _add_frequency_metrics(
+                metrics,
+                episode_length=episode_length,
+            )
+    return enriched
+
+
+def _add_frequency_metrics(
+    metrics: Mapping[str, float],
+    episode_length: int,
+) -> dict[str, float]:
+    enriched = dict(metrics)
+    denominator = float(max(int(episode_length), 1))
+    switch_count = float(
+        enriched.get("switch_applied_count", enriched.get("switch_count", 0.0))
+    )
+    enriched["switch_frequency_per_step"] = switch_count / denominator
+    enriched["switch_request_frequency_per_step"] = (
+        float(enriched.get("switch_requested_count", 0.0)) / denominator
+    )
+    enriched["invalid_action_frequency_per_step"] = (
+        float(enriched.get("invalid_switch_count", 0.0)) / denominator
+    )
+    return enriched
 
 
 def _mean_and_std(values: list[float]) -> dict[str, float]:

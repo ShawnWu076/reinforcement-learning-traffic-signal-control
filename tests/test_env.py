@@ -273,6 +273,44 @@ class AdaptiveTrafficSignalEnvTest(unittest.TestCase):
         for _ in range(5):
             self.assertEqual(agent.act(state, epsilon=1.0, action_mask=mask), KEEP_ACTION)
 
+    def test_double_dqn_update_masks_illegal_next_action(self) -> None:
+        agent = DQNAgent(
+            observation_dim=2,
+            action_dim=2,
+            config=DQNConfig(
+                gamma=1.0,
+                learning_rate=0.0,
+                batch_size=1,
+                buffer_size=4,
+                hidden_dims=(),
+                target_sync_steps=10,
+                double_dqn=True,
+            ),
+        )
+        with torch.no_grad():
+            for parameter in agent.q_network.parameters():
+                parameter.zero_()
+            for parameter in agent.target_network.parameters():
+                parameter.zero_()
+            agent.q_network.network[-1].bias.copy_(torch.tensor([0.0, 10.0]))
+            agent.target_network.network[-1].bias.copy_(torch.tensor([5.0, 100.0]))
+
+        state = np.zeros(2, dtype=np.float32)
+        next_state = np.zeros(2, dtype=np.float32)
+        agent.observe(
+            state,
+            KEEP_ACTION,
+            0.0,
+            next_state,
+            False,
+            next_action_mask=np.asarray([1.0, 0.0], dtype=np.float32),
+        )
+
+        loss = agent.update()
+
+        self.assertIsNotNone(loss)
+        self.assertAlmostEqual(float(loss), 25.0, places=5)
+
     def test_dqn_checkpoint_round_trip(self) -> None:
         env = AdaptiveTrafficSignalEnv(arrival_schedule=ZERO_SCHEDULE, episode_length=6, seed=0)
         observation, _ = env.reset(seed=0)

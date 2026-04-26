@@ -10,7 +10,8 @@ Implemented now:
 - Gymnasium-compatible `2x2` grid simulator with centralized joint actions
 - minimum-green enforcement, true yellow transitions, and invalid-switch tracking
 - three heuristic baselines: fixed-cycle, queue-threshold, max-pressure
-- DQN training loop with replay buffer, target network, legal-action masking, and seeded runs
+- DQN training loop with replay buffer, target network, legal-action masking, Double DQN targets, and seeded runs
+- multi-seed DQN experiment aggregation with mean/std reporting
 - ablation runner for reward, state, switch-penalty, and generalization studies
 - CLI config overrides for quick DQN experiments
 - lightweight hyperparameter search for both `1x1` and `2x2` setups
@@ -143,6 +144,18 @@ python3 scripts/train_dqn.py --config configs/default.yaml
 python3 scripts/summarize_results.py results/dqn_summary.json
 ```
 
+Run a multi-seed DQN experiment without replacing the single-seed summary:
+
+```bash
+python3 scripts/train_dqn.py \
+  --config configs/default.yaml \
+  --seeds 7,17,27 \
+  --no-plots
+```
+
+This writes the aggregate to `results/dqn_multiseed_summary.json` and per-seed
+checkpoints/summaries under `results/multiseed/`.
+
 Run the standard `1x1` or `2x2` experiment profiles:
 
 ```bash
@@ -157,6 +170,15 @@ python3 scripts/train_dqn.py \
   --config configs/default.yaml \
   --set training.learning_rate=0.0005 \
   --set training.hidden_dims='[256, 128]'
+```
+
+Double DQN is enabled by default in the provided configs. To run the vanilla DQN
+target update for an ablation:
+
+```bash
+python3 scripts/train_dqn.py \
+  --config configs/default.yaml \
+  --set training.double_dqn=false
 ```
 
 Run the built-in hyperparameter search:
@@ -203,7 +225,9 @@ Main generated artifacts:
 
 - `results/baseline_summary.json`
 - `results/dqn_summary.json`
+- `results/dqn_multiseed_summary.json`
 - `results/checkpoints/dqn_policy.pt`
+- `results/multiseed/seed_*/dqn_summary.json`
 - `results/ablations/ablation_summary.json`
 - `results/tuning/tuning_summary.json`
 - `results/plots/dqn/*.png`
@@ -223,6 +247,9 @@ Reported metrics:
 - `switch_requested_count`
 - `switch_applied_count`
 - `invalid_switch_count`
+- `switch_frequency_per_step` in multi-seed aggregates
+- `switch_request_frequency_per_step` in multi-seed aggregates
+- `invalid_action_frequency_per_step` in multi-seed aggregates
 - `internal_transfer_count` for `2x2`
 - `average_switches_per_intersection` for `2x2`
 

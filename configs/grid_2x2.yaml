@@ -81,6 +81,7 @@ training:
   warmup_steps: 800
   update_frequency: 1
   target_sync_steps: 300
+  double_dqn: true
   seed: 13
   log_interval_episodes: 25
 
